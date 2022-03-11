@@ -1,0 +1,1 @@
+INSERT INTO votes(student, vote_type, song_id, submitted_at) VALUES (?, ?, ?, CURDATE())

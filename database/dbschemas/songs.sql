@@ -1,0 +1,11 @@
+CREATE TABLE IF NOT EXISTS songs (
+	song_id int PRIMARY KEY NOT NULL AUTO_INCREMENT,
+
+	authors VARCHAR(128) NOT NULL,
+	title VARCHAR(256) NOT NULL,
+	youtube_id VARCHAR(16) NOT NULL,
+	length_seconds int NOT NULL,
+	release_date DATE,
+
+	debuted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

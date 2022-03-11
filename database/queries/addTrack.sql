@@ -1,0 +1,1 @@
+INSERT INTO songs VALUES(NULL, ?, ?, ?, ?, ?, NULL)

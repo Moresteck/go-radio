@@ -1,0 +1,1 @@
+DELETE FROM playlists,playlist_entries WHERE playlist_id=?

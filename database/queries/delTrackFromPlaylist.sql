@@ -1,0 +1,1 @@
+DELETE FROM playlist_entries WHERE playlist_id=? && song_id=?

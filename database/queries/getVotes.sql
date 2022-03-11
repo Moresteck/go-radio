@@ -1,0 +1,1 @@
+SELECT * FROM votes WHERE song_id=? AND WEEK(submitted_at)=WEEK(CURDATE()) AND vote_type=?

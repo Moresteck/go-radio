@@ -1,0 +1,1 @@
+INSERT INTO schedule(date_at, content, submitted_at) VALUES (?, ?, CURDATE())

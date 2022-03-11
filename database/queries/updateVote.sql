@@ -1,0 +1,1 @@
+UPDATE votes SET `vote_type`=? WHERE `student`=? && `song_id`=? && WEEK(`submitted_at`)=WEEK(CURDATE())
