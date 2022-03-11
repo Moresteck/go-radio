@@ -352,7 +352,7 @@ func StartSchedule(schedule database.Schedule) {
 								}
 							}
 
-							if curPlayList == pid && lastIndex != fading.CurIndex {
+							if curPlayList == pid && lastIndex != fading.CurIndex && len(queue) > fading.CurIndex {
 								lastIndex = fading.CurIndex
 								song := queue[fading.CurIndex]
 								log.Println(song.Authors + " - " + song.Title + " (" + song.ReleaseDate.Format("2006-01-02") + ")")
