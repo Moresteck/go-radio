@@ -7,15 +7,12 @@ import (
 	"github.com/faiface/beep/mp3"
 	"github.com/faiface/beep/speaker"
 	"github.com/faiface/beep/wav"
-	"github.com/julienschmidt/httprouter"
 
 	"log"
 	"os"
 	"strconv"
 	"strings"
 	"time"
-
-	"net/http"
 
 	"radio/database"
 	"radio/fading"
@@ -35,7 +32,7 @@ func InitSpeaker() {
 
 func Init() {
 	InitSpeaker()
-	playlists, err := database.GetPlaylistsArrayObject()
+	playlists, err := database.GetPlaylistsArray()
 	if err == nil {
 		for _, playlist := range playlists {
 			generatedQueues[playlist.Id] = database.CreateQueue(strconv.Itoa(playlist.Id))
@@ -65,18 +62,18 @@ func PlayPlaylist(id int) {
 		el := songids[i]
 
 		idstr := strconv.Itoa(el)
-		track, form := GetTrackFormat(idstr)
+		song, form := GetSongFormat(idstr)
 
-		if track == nil {
+		if song == nil {
 			continue
 		}
-		dbtrack := database.GetSongObject(idstr)
+		dbsong := database.GetSongData(idstr)
 		if i == 0 {
 			format = form
 		}
 
-		streamers = append(streamers, track)
-		queue = append(queue, dbtrack)
+		streamers = append(streamers, song)
+		queue = append(queue, dbsong)
 	}
 	opts := fading.Options{
 		TimeSpan: time.Duration(5) * time.Second,
@@ -95,11 +92,11 @@ func PlayPlaylist(id int) {
 	speaker.Play(curVolume)
 }
 
-func PlayTrack(songid string) {
-	s := GetTrack(songid)
+func PlaySong(songid string) {
+	s := GetSong(songid)
 	if s != nil {
 		log.Println("Playing " + songid)
-		song := database.GetSongObject(songid)
+		song := database.GetSongData(songid)
 		log.Println(song.Authors + " - " + song.Title + " (" + song.ReleaseDate.String() + ")")
 
 		speaker.Play(s)
@@ -107,13 +104,13 @@ func PlayTrack(songid string) {
 
 }
 
-func PlayTracks(songids []string) {
+func PlaSongs(songids []string) {
 	for _, el := range songids {
-		s := GetTrack(el)
+		s := GetSong(el)
 		if s != nil {
 			log.Println("Playing " + el)
 
-			song := database.GetSongObject(el)
+			song := database.GetSongData(el)
 			log.Println(song.Authors + " - " + song.Title + " (" + song.ReleaseDate.String() + ")")
 			done := make(chan bool)
 			speaker.Play(beep.Seq(s, beep.Callback(func() {
@@ -126,12 +123,12 @@ func PlayTracks(songids []string) {
 	}
 	log.Println("End playback")
 }
-func GetTrack(songid string) beep.StreamSeeker {
-	buffer, _ := GetTrackFormat(songid)
+func GetSong(songid string) beep.StreamSeeker {
+	buffer, _ := GetSongFormat(songid)
 	return buffer
 }
 
-func GetTrackFormat(songid string) (beep.StreamSeekCloser, beep.Format) {
+func GetSongFormat(songid string) (beep.StreamSeekCloser, beep.Format) {
 	if _, err := os.Stat("music/" + songid + "/audio.wav"); err == nil {
 		f, err := os.Open("music/" + songid + "/audio.wav")
 		if err != nil {
@@ -186,16 +183,16 @@ func PlayFiles(files []string) {
 	for i := fading.CurIndex; i < len(files); i++ {
 		el := files[i]
 
-		track, form := GetFileStreamer(el)
+		song, form := GetFileStreamer(el)
 
-		if track == nil {
+		if song == nil {
 			continue
 		}
 		if i == 0 {
 			format = *form
 		}
 
-		streamers = append(streamers, track)
+		streamers = append(streamers, song)
 		fileQueue = append(fileQueue, el)
 	}
 	opts := fading.Options{
@@ -249,16 +246,6 @@ func GetFileStreamer(loc string) (beep.StreamSeeker, *beep.Format) {
 	}
 }
 
-func Play(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
-
-	if Inited == false {
-		Init()
-	}
-
-	songs := []string{"2", "1"}
-	PlayTracks(songs)
-}
-
 var discardCurSchedule = make(map[int]bool)
 
 func StartSchedule(schedule database.Schedule) {
@@ -268,7 +255,7 @@ func StartSchedule(schedule database.Schedule) {
 
 		ticker := time.NewTicker(time.Second)
 
-		go func(plan1 database.Plan, planid int) {
+		go func(plan1 database.PlanBlock, planid int) {
 			discardCurSchedule[planid] = false
 			phaseout := false
 			wasrun := false
@@ -325,7 +312,7 @@ func StartSchedule(schedule database.Schedule) {
 
 								if fading.CurIndex > -1 {
 
-									go func(plan2 database.Plan, planid1 int) {
+									go func(plan2 database.PlanBlock, planid1 int) {
 										//lowvolumeticker := time.NewTicker(time.Second / 10)
 
 										for {

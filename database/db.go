@@ -6,22 +6,18 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"log"
-	"net/http"
 
 	"math/rand"
-	"os"
 	"sort"
 	"strconv"
 	"time"
 
 	_ "embed"
 
-	"radio/utils"
-
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/julienschmidt/httprouter"
 )
 
+// db connection
 var db *sql.DB
 
 func Init() {
@@ -42,6 +38,7 @@ func Init() {
 	db.SetMaxOpenConns(50)
 	db.SetMaxIdleConns(50)
 
+	// populate defaults if they don't exist already
 	if _, err := db.Exec(SchemaPlaylists); err != nil {
 		log.Fatalf("Couldn't prepare playlist table: %v\n", err)
 	}
@@ -63,30 +60,43 @@ func Init() {
 	}
 }
 
+// playlist object data
 type Playlist struct {
-	Id        int       `json:"id"`
-	Name      string    `json:"title"`
-	Desc      string    `json:"description"`
+	Id   int    `json:"id"`
+	Name string `json:"title"`
+	Desc string `json:"description"`
+	// the higher the rank, the earlier the playlist will show on playlist index
+	// TODO implement
 	Rank      int       `json:"rank"`
 	DebutDate time.Time `json:"debut_date"`
 }
 
+// song object as seen in db
 type SongData struct {
 	SongId      int       `json:"song_id"`
 	Authors     string    `json:"authors"`
 	Title       string    `json:"title"`
 	YTId        string    `json:"youtube_id"`
 	Length      int       `json:"length"`
-	VoteCount   int       `json:"vote_count"`
 	ReleaseDate time.Time `json:"release_date"`
 	DebutedAt   time.Time `json:"debuted_at"`
 }
 
+// delegated to a method, because vote count is dynamic
+func (song *SongData) VoteCount() int {
+	// substract negative votes from positive ones to get the total value
+	// 1 - positive; 0 - negative
+	return len(GetValidVotesForSong(strconv.Itoa(song.SongId), 1)) - len(GetValidVotesForSong(strconv.Itoa(song.SongId), 0))
+}
+
+// playlist entry from db
 type PlaylistEntry struct {
 	playlistId int       `json:"playlist_id"`
 	songId     int       `json:"song_id"`
-	Song       SongData  `json:"song_data"`
 	DebutDate  time.Time `json:"debut_date"`
+
+	// this isn't stored in db; it's for easy access
+	Song SongData `json:"song_data"`
 }
 
 type PlaylistEntryArray []PlaylistEntry
@@ -96,21 +106,23 @@ func (e PlaylistEntryArray) Len() int {
 }
 
 func (e PlaylistEntryArray) Less(i, j int) bool {
-	return e[i].Song.VoteCount > e[j].Song.VoteCount
+	return e[i].Song.VoteCount() > e[j].Song.VoteCount()
 }
 
 func (e PlaylistEntryArray) Swap(i, j int) {
 	e[i], e[j] = e[j], e[i]
 }
 
+// vote object from db
 type Vote struct {
-	Student    string    `json:"student"`
+	Student string `json:"student"`
+	// 0 - negative; 1 - positive
 	VoteType   int       `json:"vote_type"`
 	Song       int       `json:"song_id"`
 	SubmitDate time.Time `json:"submitted_at"`
 }
 
-func GetPlaylistsArrayObject() ([]Playlist, error) {
+func GetPlaylistsArray() ([]Playlist, error) {
 	results, err := db.Query(GetPlaylistListQuery)
 	if err != nil {
 		return nil, err
@@ -130,26 +142,8 @@ func GetPlaylistsArrayObject() ([]Playlist, error) {
 	return playlists, nil
 }
 
-func GetPlaylistList(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-
-	playlists, err := GetPlaylistsArrayObject()
-	if err != nil {
-		utils.SendErrorJSON(w, r, "Unknown error")
-		log.Printf("DB error: %v\n", err)
-		return
-	}
-
-	if len(playlists) == 0 {
-		utils.SendErrorJSON(w, r, "No playlists found")
-	} else {
-		j, _ := utils.JSONMarshal(playlists)
-
-		utils.SendJSON(w, r, j)
-	}
-}
-
-func GetPlaylistInfoObject(playlistid string) *Playlist {
-	plarray, _ := GetPlaylistsArrayObject()
+func GetPlaylistData(playlistid string) *Playlist {
+	plarray, _ := GetPlaylistsArray()
 	for _, playlist := range plarray {
 		id := strconv.Itoa(playlist.Id)
 		if id == playlistid {
@@ -159,9 +153,9 @@ func GetPlaylistInfoObject(playlistid string) *Playlist {
 	return nil
 }
 
-func GetPlaylistObject(playlistid string) ([]PlaylistEntry, error) {
+func GetPlaylistEntries(playlistid string) ([]PlaylistEntry, error) {
 
-	results, err := db.Query(GetPlaylistTracksQuery, playlistid)
+	results, err := db.Query(GetPlaylistSongsQuery, playlistid)
 	if err != nil {
 		return nil, err
 	}
@@ -174,56 +168,15 @@ func GetPlaylistObject(playlistid string) ([]PlaylistEntry, error) {
 		if err != nil {
 			return playlistEntries, err
 		}
-		err2 := db.QueryRow(GetTrackQuery, playlistEntry.songId).Scan(&playlistEntry.Song.SongId, &playlistEntry.Song.Authors, &playlistEntry.Song.Title, &playlistEntry.Song.YTId, &playlistEntry.Song.Length, &playlistEntry.Song.ReleaseDate, &playlistEntry.Song.DebutedAt)
+		err2 := db.QueryRow(GetSongQuery, playlistEntry.songId).Scan(&playlistEntry.Song.SongId, &playlistEntry.Song.Authors, &playlistEntry.Song.Title, &playlistEntry.Song.YTId, &playlistEntry.Song.Length, &playlistEntry.Song.ReleaseDate, &playlistEntry.Song.DebutedAt)
 		if err2 != nil {
 			return playlistEntries, err2
 		}
 
-		playlistEntry.Song.VoteCount = len(GetValidVotes(strconv.Itoa(playlistEntry.songId), 1)) - len(GetValidVotes(strconv.Itoa(playlistEntry.songId), 0))
 		playlistEntries = append(playlistEntries, playlistEntry)
 	}
 
 	return playlistEntries, nil
-}
-
-func GetPlaylist(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
-	playlistid := r.URL.Query().Get("id")
-	index, _ := strconv.ParseInt(r.URL.Query().Get("index"), 10, 64)
-	index = index*10 - 10
-
-	playlistEntries, err := GetPlaylistObject(playlistid)
-	if err != nil {
-		utils.SendErrorJSON(w, r, "Unknown error")
-		log.Printf("DB error: %v\n", err)
-		return
-	}
-	var toReturn []PlaylistEntry
-	// only list 10 entries per request
-	currentIndex := int64(-1)
-	passed := 0
-	for _, obj := range playlistEntries {
-		currentIndex++
-
-		if currentIndex < index {
-			continue
-		}
-
-		if passed >= 10 {
-			break
-		}
-
-		toReturn = append(toReturn, obj)
-
-		passed++
-	}
-
-	if len(toReturn) == 0 {
-		utils.SendErrorJSON(w, r, "No playlist with id "+playlistid+" found")
-	} else {
-		j, _ := utils.JSONMarshal(toReturn)
-
-		utils.SendJSON(w, r, j)
-	}
 }
 
 func AddPlaylist(title, desc string, rank int) error {
@@ -236,28 +189,28 @@ func DelPlaylist(id string) error {
 	return err
 }
 
-func AddTrackToPlaylist(playlistid, songid string) error {
-	_, err := db.Exec(AddTrackToPlaylistCmd, playlistid, songid)
+func AddSongToPlaylist(playlistid, songid string) error {
+	_, err := db.Exec(AddSongToPlaylistCmd, playlistid, songid)
 	return err
 }
 
-func DelTrackFromPlaylist(playlistid, songid string) error {
-	_, err := db.Exec(DelTrackFromPlaylistCmd, playlistid, songid)
+func DelSongFromPlaylist(playlistid, songid string) error {
+	_, err := db.Exec(DelSongFromPlaylistCmd, playlistid, songid)
 	return err
 }
 
 func AddSong(song SongData) error {
-	_, err := db.Exec(AddTrackQuery, song.Authors, song.Title, song.YTId, song.Length, song.ReleaseDate)
+	_, err := db.Exec(AddSongCmd, song.Authors, song.Title, song.YTId, song.Length, song.ReleaseDate)
 	return err
 }
 
 func DelSong(songid string) error {
-	_, err := db.Exec(DelTrackQuery, songid)
+	_, err := db.Exec(DelSongCmd, songid)
 	return err
 }
 
-func GetSongObjects() []SongData {
-	rows, err := db.Query(GetTracksQuery)
+func GetSongArray() []SongData {
+	rows, err := db.Query(GetSongsQuery)
 	if err != nil {
 		return []SongData{}
 	}
@@ -270,42 +223,25 @@ func GetSongObjects() []SongData {
 		if err != nil {
 			return []SongData{}
 		}
-		songid := strconv.Itoa(song.SongId)
-
-		song.VoteCount = len(GetValidVotes(songid, 1)) - len(GetValidVotes(songid, 0))
 
 		songs = append(songs, song)
 	}
 	return songs
 }
 
-func GetSongObject(songid string) *SongData {
+func GetSongData(songid string) *SongData {
 	song := &SongData{}
-	err := db.QueryRow(GetTrackQuery, songid).
+	err := db.QueryRow(GetSongQuery, songid).
 		Scan(&song.SongId, &song.Authors, &song.Title, &song.YTId, &song.Length, &song.ReleaseDate, &song.DebutedAt)
 	if err != nil {
 		log.Printf("DB error (song data): %v\n", err)
 		return nil
 	} else {
-		song.VoteCount = len(GetValidVotes(songid, 1)) - len(GetValidVotes(songid, 0))
 		return song
 	}
 }
 
-func GetSong(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
-
-	songid := r.URL.Query().Get("id")
-	song := GetSongObject(songid)
-	if song != nil {
-		j, _ := utils.JSONMarshal(song)
-
-		utils.SendJSON(w, r, j)
-	} else {
-		utils.SendErrorJSON(w, r, "No song with id "+songid+" found")
-	}
-}
-
-func GetValidVotes(songid string, votetype int) []Vote {
+func GetValidVotesForSong(songid string, votetype int) []Vote {
 	results, err := db.Query(GetVotesQuery, songid, votetype)
 	if err != nil {
 		return []Vote{}
@@ -325,76 +261,32 @@ func GetValidVotes(songid string, votetype int) []Vote {
 	return votes
 }
 
-func UpdateVote(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
-	// TODO: verification of group + accesstoken
-	userId := r.URL.Query().Get("userId")
-	songId := r.URL.Query().Get("songId")
-	voteType := r.URL.Query().Get("voteType")
-	//accessToken := r.URL.Query().Get("accessToken")
-
-	if song := GetSongObject(songId); song == nil {
-		utils.SendErrorJSON(w, r, "Song with given id doesn't exist")
-		return
-	}
-
-	respond, err := db.Query(VoteQuery, userId, songId)
-	if err != nil {
-		utils.SendErrorJSON(w, r, "Unknown error")
-		log.Printf("DB error (vote update): %v\n", err)
-		return
-	}
-
-	if respond.Next() {
-		_, err2 := db.Exec(UpdateVoteQuery, voteType, userId, songId)
-		if err2 != nil {
-			utils.SendErrorJSON(w, r, "Unknown error")
-			log.Printf("DB error (vote update): %v\n", err2)
-			return
-		}
-	} else {
-		_, err2 := db.Exec(AddVoteQuery, userId, voteType, songId)
-		if err2 != nil {
-			utils.SendErrorJSON(w, r, "Unknown error")
-			log.Printf("DB error (vote add): %v\n", err2)
-			return
-		}
-	}
-	utils.SendResponseJSON(w, r, "Operation successful")
-}
-
-func GetCover(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
-	songId := r.URL.Query().Get("id")
-
-	coverfile, err := os.Open("music/" + songId + "/cover.jpg")
-	if err == nil {
-		stat, _ := coverfile.Stat()
-		buffer := make([]byte, stat.Size())
-		coverfile.Read(buffer)
-		w.Header().Set("Content-Type", "image/jpeg")
-		w.Write(buffer)
-	} else {
-		w.WriteHeader(http.StatusNotFound)
-	}
-}
-
+// this tells the broadcast type of a planblock
+// only ONE type from this struct can be Active=true
 type BroadcastTypes struct {
 	Playlist PlaylistBroadcastType `json:"playlist"`
 	Silence  SilenceBroadcastType  `json:"silence"`
 	File     FileBroadcastType     `json:"file"`
 }
 
+// abstract type inherited by its implementations
+type BroadcastType struct {
+	Active bool `json:"active"`
+}
+
 type PlaylistBroadcastType struct {
-	Active     bool   `json:"active"`
+	BroadcastType
 	PlaylistId string `json:"playlist_id"`
 }
 
 type FileBroadcastType struct {
-	Active   bool     `json:"active"`
+	BroadcastType
+	// values in array must point to existing wav/mp3/flac files
 	Location []string `json:"location_on_disk"`
 }
 
 type SilenceBroadcastType struct {
-	Active bool `json:"active"`
+	BroadcastType
 }
 
 type Range struct {
@@ -402,29 +294,20 @@ type Range struct {
 	End   time.Time `json:"end"`
 }
 
-type Plan struct {
+type PlanBlock struct {
 	Range Range          `json:"range"`
 	Type  BroadcastTypes `json:"broadcast_type"`
 }
 
-type Schedule []Plan
-
-func GetSchedule(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	date := r.URL.Query().Get("date")
-
-	sched := GetScheduleFor(date)
-
-	j, _ := utils.JSONMarshal(sched)
-
-	utils.SendJSON(w, r, j)
-}
+// a schedule consists of planblocks
+type Schedule []PlanBlock
 
 func GetScheduleFor(date_at string) Schedule {
 	var raw string
-	var plan []Plan
+	var schedule Schedule
 
 	//log.Println(date_at)
-	err := db.QueryRow(GetPlanCmd, date_at).Scan(&raw)
+	err := db.QueryRow(GetScheduleQuery, date_at).Scan(&raw)
 	if err == sql.ErrNoRows {
 		return nil
 	}
@@ -435,71 +318,72 @@ func GetScheduleFor(date_at string) Schedule {
 	rawdecode, _ := base64.StdEncoding.DecodeString(raw)
 	//log.Println(string(rawdecode))
 
-	err2 := json.Unmarshal(rawdecode, &plan)
+	err2 := json.Unmarshal(rawdecode, &schedule)
 	if err2 != nil {
 		log.Println(err2)
 		return nil
 	}
-	return plan
+	return schedule
 }
 
 func CreateSampleSchedule() {
 
 	start := time.Now()
-	end := start.Add(time.Minute * 6)
+	end := start.Add(time.Minute * 30)
 
-	plan := []Plan{}
-	plan1 := Plan{}
+	schedule := Schedule{}
+	plan1 := PlanBlock{}
 	plan1.Range.Start = start
 	plan1.Range.End = end
 
 	start = end.Add(time.Second * 10)
 	end = start.Add(time.Minute * 3)
 
-	plan2 := Plan{}
+	plan2 := PlanBlock{}
 	plan2.Range.Start = start
 	plan2.Range.End = end
 
-	pbti := PlaylistBroadcastType{true, "1"}
+	pbti := PlaylistBroadcastType{BroadcastType: BroadcastType{Active: true}, PlaylistId: "1"}
 	plan1.Type.Playlist = pbti
-	pbti1 := PlaylistBroadcastType{true, "2"}
+	pbti1 := PlaylistBroadcastType{BroadcastType: BroadcastType{Active: true}, PlaylistId: "2"}
 	plan2.Type.Playlist = pbti1
 
-	plan = append(plan, plan1)
-	plan = append(plan, plan2)
+	schedule = append(schedule, plan1)
+	schedule = append(schedule, plan2)
 
-	UpdateSchedule(start.Format("2006-01-02"), plan)
+	UpdateSchedule(start.Format("2006-01-02"), schedule)
 
 }
 
-func UpdateSchedule(date string, plan []Plan) {
-	jnoindent, _ := json.Marshal(plan)
+func UpdateSchedule(date string, schedule Schedule) {
+	jnoindent, _ := json.Marshal(schedule)
 
-	dbplan := GetScheduleFor(date)
+	dbschedule := GetScheduleFor(date)
 
-	if dbplan == nil {
-		_, err := db.Exec(AddPlanCmd, date, base64.StdEncoding.EncodeToString(jnoindent))
+	if dbschedule == nil {
+		_, err := db.Exec(AddScheduleCmd, date, base64.StdEncoding.EncodeToString(jnoindent))
 		if err != nil {
 			log.Println(err)
 		}
 	} else {
-		_, err := db.Exec(SetPlanCmd, base64.StdEncoding.EncodeToString(jnoindent), date)
+		_, err := db.Exec(SetScheduleCmd, base64.StdEncoding.EncodeToString(jnoindent), date)
 		if err != nil {
 			log.Println(err)
 		}
 	}
 }
 
+// returns an array of songids
 func CreateQueue(playlistid string) []int {
-	playlist, err := GetPlaylistObject(playlistid)
+	entries, err := GetPlaylistEntries(playlistid)
 	if err != nil {
 		return nil
 	}
-	sort.Sort(PlaylistEntryArray(playlist))
+	sort.Sort(PlaylistEntryArray(entries))
 
 	pos := 0
 	var votedList []SongData
-	for _, entry := range playlist {
+	for _, entry := range entries {
 		pos++
 
 		var multiply int
@@ -523,7 +407,7 @@ func CreateQueue(playlistid string) []int {
 
 	// get random song from the pile
 	// then append it to the final queue
-	// but check if the same song doesnt occur in the neighbouring two slots
+	// but check if the same song doesnt occur in the three last slots
 
 	var queue []int
 	rand.Seed(time.Now().UnixNano())

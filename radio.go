@@ -37,13 +37,12 @@ func main() {
 	router.NotFound = &NotFoundHandler{}
 	router.RedirectTrailingSlash = true
 
-	router.GET("/updatevote", database.UpdateVote)
-	router.GET("/play", playback.Play)
-	router.GET("/getplaylists", database.GetPlaylistList)
-	router.GET("/getplaylist", database.GetPlaylist)
-	router.GET("/getsong", database.GetSong)
-	router.GET("/getcover", database.GetCover)
-	router.GET("/getplan", database.GetSchedule)
+	router.GET("/updatevote", database.HTTPUpdateVote)
+	router.GET("/getplaylists", database.HTTPGetPlaylistIndex)
+	router.GET("/getplaylist", database.HTTPGetPlaylist)
+	router.GET("/getsong", database.HTTPGetSong)
+	router.GET("/getcover", database.HTTPGetCover)
+	router.GET("/getschedule", database.HTTPGetSchedule)
 
 	database.CreateSampleSchedule()
 
@@ -103,8 +102,8 @@ func consoleInput() {
 
 				plid := args[2]
 
-				plistobj := database.GetPlaylistInfoObject(plid)
-				plist, err := database.GetPlaylistObject(plid)
+				plistdata := database.GetPlaylistData(plid)
+				plist, err := database.GetPlaylistEntries(plid)
 				if cmdHandleErr(err) {
 					break
 				}
@@ -122,7 +121,7 @@ func consoleInput() {
 
 				var maxpage int
 				maxpage = int((len(plist)-1)/10) + 1
-				fmt.Println("=== Playlist " + plid + " (" + plistobj.Name + ") ===")
+				fmt.Println("=== Playlist " + plid + " (" + plistdata.Name + ") ===")
 				fmt.Println("Size: " + strconv.Itoa(len(plist)))
 				fmt.Println("Page: " + pagestr + "/" + strconv.Itoa(maxpage))
 				fmt.Println()
@@ -148,7 +147,7 @@ func consoleInput() {
 					continue
 				}
 
-				err = database.AddTrackToPlaylist(args[2], args[3])
+				err = database.AddSongToPlaylist(args[2], args[3])
 				if !cmdHandleErr(err) {
 					log.Println("Song " + args[3] + " was successfully added to playlist " + args[2] + "!")
 				}
@@ -158,7 +157,7 @@ func consoleInput() {
 					continue
 				}
 
-				err = database.DelTrackFromPlaylist(args[2], args[3])
+				err = database.DelSongFromPlaylist(args[2], args[3])
 				if !cmdHandleErr(err) {
 					log.Println("Song " + args[3] + " was successfully removed from playlist " + args[2] + "!")
 				}
@@ -168,7 +167,7 @@ func consoleInput() {
 					continue
 				}
 
-				list := database.GetPlaylistInfoObject(args[2])
+				list := database.GetPlaylistData(args[2])
 
 				fmt.Println("=Are you sure you want to delete playlist " + args[2] + " [" + list.Name + "? (y/n)")
 				yn, err := reader.ReadString('\n')
@@ -186,7 +185,7 @@ func consoleInput() {
 					log.Println("Playlist deletion canceled.")
 				}
 			} else if args[1] == "list" {
-				list, err := database.GetPlaylistsArrayObject()
+				list, err := database.GetPlaylistsArray()
 				if cmdHandleErr(err) {
 					break
 				}
@@ -227,7 +226,7 @@ func consoleInput() {
 			}
 
 			if args[1] == "list" {
-				songs := database.GetSongObjects()
+				songs := database.GetSongArray()
 				index := 0
 
 				if len(args) == 3 {
@@ -347,8 +346,8 @@ func consoleInput() {
 
 				for {
 					fmt.Println("=Interact with (pos index | no | new):")
-					posstr, err0 := reader.ReadString('\n')
-					if cmdHandleErr(err0) {
+					posstr, err := reader.ReadString('\n')
+					if cmdHandleErr(err) {
 						break
 					}
 
@@ -373,8 +372,8 @@ func consoleInput() {
 						printPlan(*plan)
 						continue
 					}
-					pos64, err1 := strconv.ParseInt(posstr, 10, 64)
-					if cmdHandleErr(err1) {
+					pos64, err := strconv.ParseInt(posstr, 10, 64)
+					if cmdHandleErr(err) {
 						break
 					}
 					pos := int(pos64)
@@ -385,47 +384,47 @@ func consoleInput() {
 					}
 
 					fmt.Println("= (change | remove)")
-					action, err2 := reader.ReadString('\n')
-					if cmdHandleErr(err2) {
+					action, err := reader.ReadString('\n')
+					if cmdHandleErr(err) {
 						break
 					}
 					action = strings.TrimSuffix(action, "\r\n")
 					if action == "change" {
 						fmt.Println("=Range start (keep | <HH:mm:ss>)")
-						rangestartarg, err3 := reader.ReadString('\n')
-						if cmdHandleErr(err3) {
+						rangestartarg, err := reader.ReadString('\n')
+						if cmdHandleErr(err) {
 							break
 						}
 						rangestartarg = strings.TrimSuffix(rangestartarg, "\r\n")
 
 						if rangestartarg != "keep" {
 							rangestartarg = date + "T" + rangestartarg + "-00:00"
-							rangest, terr1 := time.Parse(time.RFC3339, rangestartarg)
-							if cmdHandleErr(terr1) {
+							rangest, err := time.Parse(time.RFC3339, rangestartarg)
+							if cmdHandleErr(err) {
 								break
 							}
 							schedule[pos].Range.Start = rangest
 						}
 
 						fmt.Println("=Range end (keep | <HH:mm:ss>)")
-						rangeendarg, err4 := reader.ReadString('\n')
-						if cmdHandleErr(err4) {
+						rangeendarg, err := reader.ReadString('\n')
+						if cmdHandleErr(err) {
 							break
 						}
 						rangeendarg = strings.TrimSuffix(rangeendarg, "\r\n")
 
 						if rangeendarg != "keep" {
 							rangeendarg = date + "T" + rangeendarg + "-00:00"
-							rangeet, terr1 := time.Parse(time.RFC3339, rangeendarg)
-							if cmdHandleErr(terr1) {
+							rangeet, err := time.Parse(time.RFC3339, rangeendarg)
+							if cmdHandleErr(err) {
 								break
 							}
 							schedule[pos].Range.End = rangeet
 						}
 
 						fmt.Println("=Edit type? (yes | no)")
-						yn, err5 := reader.ReadString('\n')
-						if cmdHandleErr(err5) {
+						yn, err := reader.ReadString('\n')
+						if cmdHandleErr(err) {
 							break
 						}
 						yn = strings.TrimSuffix(yn, "\r\n")
@@ -442,10 +441,10 @@ func consoleInput() {
 						log.Println("Schedule updated successfully!")
 					} else if action == "remove" {
 						// make it silent
-						schedule[pos].Type.Silence.Active = true
-						schedule[pos].Type.Playlist.Active = false
+						schedule[pos].Type.Silence.BroadcastType.Active = true
+						schedule[pos].Type.Playlist.BroadcastType.Active = false
 						schedule[pos].Type.Playlist.PlaylistId = ""
-						schedule[pos].Type.File.Active = false
+						schedule[pos].Type.File.BroadcastType.Active = false
 						schedule[pos].Type.File.Location = []string{}
 
 						database.UpdateSchedule(date, schedule)
@@ -460,11 +459,11 @@ func consoleInput() {
 					continue
 				}
 				date := args[2]
-				var plans []database.Plan
+				var schedule database.Schedule
 				for {
 					fmt.Println("== New block? (yes | no)")
-					yesno, err0 := reader.ReadString('\n')
-					if cmdHandleErr(err0) {
+					yesno, err := reader.ReadString('\n')
+					if cmdHandleErr(err) {
 						break
 					}
 					yesno = strings.Replace(yesno, "\r\n", "", -1)
@@ -481,9 +480,9 @@ func consoleInput() {
 					if plan == nil {
 						break
 					}
-					plans = append(plans, *plan)
+					schedule = append(schedule, *plan)
 				}
-				database.UpdateSchedule(date, plans)
+				database.UpdateSchedule(date, schedule)
 				playback.ScheduleChanged(date)
 				log.Println("Schedule for '" + date + "' successfully set!")
 			}
@@ -495,32 +494,32 @@ func consoleInput() {
 
 func readTime(date string) (*time.Time, *time.Time) {
 	fmt.Println("=Range start (HH:mm:ss) :")
-	range_start, err1 := reader.ReadString('\n')
-	if cmdHandleErr(err1) {
+	range_start, err := reader.ReadString('\n')
+	if cmdHandleErr(err) {
 		return nil, nil
 	}
 	range_start = strings.Replace(range_start, "\r\n", "", -1)
 	range_start = date + "T" + range_start + "-00:00"
-	timestart, terr := time.Parse(time.RFC3339, range_start)
-	if cmdHandleErr(terr) {
+	timestart, err := time.Parse(time.RFC3339, range_start)
+	if cmdHandleErr(err) {
 		return nil, nil
 	}
 
 	fmt.Println("=Range end (HH:mm:ss) :")
-	range_end, err2 := reader.ReadString('\n')
-	if cmdHandleErr(err2) {
+	range_end, err := reader.ReadString('\n')
+	if cmdHandleErr(err) {
 		return nil, nil
 	}
 	range_end = strings.Replace(range_end, "\r\n", "", -1)
 	range_end = date + "T" + range_end + "-00:00"
-	timeend, terr1 := time.Parse(time.RFC3339, range_end)
-	if cmdHandleErr(terr1) {
+	timeend, err := time.Parse(time.RFC3339, range_end)
+	if cmdHandleErr(err) {
 		return nil, nil
 	}
 	return &timestart, &timeend
 }
 
-func readBroadcastType(start, end time.Time) *database.Plan {
+func readBroadcastType(start, end time.Time) *database.PlanBlock {
 	fmt.Println("=Broadcast type (playlist | silence | file) :")
 	bcast_type, err := reader.ReadString('\n')
 	if cmdHandleErr(err) {
@@ -531,8 +530,8 @@ func readBroadcastType(start, end time.Time) *database.Plan {
 	if bcast_type == "playlist" {
 		fmt.Println("=Playlist ID")
 
-		plarray, err0 := database.GetPlaylistsArrayObject()
-		if cmdHandleErr(err0) {
+		plarray, err := database.GetPlaylistsArray()
+		if cmdHandleErr(err) {
 			return nil
 		}
 
@@ -545,13 +544,13 @@ func readBroadcastType(start, end time.Time) *database.Plan {
 		fmt.Print(pllist + ") :")
 		fmt.Println()
 
-		play_id, err1 := reader.ReadString('\n')
-		if cmdHandleErr(err1) {
+		play_id, err := reader.ReadString('\n')
+		if cmdHandleErr(err) {
 			return nil
 		}
 		play_id = strings.TrimSuffix(play_id, "\r\n")
 
-		plan := database.Plan{
+		plan := database.PlanBlock{
 			Range: database.Range{
 				Start: start,
 				End:   end,
@@ -559,20 +558,24 @@ func readBroadcastType(start, end time.Time) *database.Plan {
 			Type: database.BroadcastTypes{
 				Playlist: database.PlaylistBroadcastType{
 					PlaylistId: play_id,
-					Active:     true,
+					BroadcastType: database.BroadcastType{
+						Active: true,
+					},
 				},
 			},
 		}
 		return &plan
 	} else if bcast_type == "silence" {
-		plan := database.Plan{
+		plan := database.PlanBlock{
 			Range: database.Range{
 				Start: start,
 				End:   end,
 			},
 			Type: database.BroadcastTypes{
 				Silence: database.SilenceBroadcastType{
-					Active: true,
+					BroadcastType: database.BroadcastType{
+						Active: true,
+					},
 				},
 			},
 		}
@@ -582,8 +585,8 @@ func readBroadcastType(start, end time.Time) *database.Plan {
 		for {
 			fmt.Println("=File location (<location> | end):")
 
-			loc, err1 := reader.ReadString('\n')
-			if cmdHandleErr(err1) {
+			loc, err := reader.ReadString('\n')
+			if cmdHandleErr(err) {
 				log.Println("Failed to read!")
 				break
 			}
@@ -594,7 +597,7 @@ func readBroadcastType(start, end time.Time) *database.Plan {
 			locations = append(locations, loc)
 		}
 
-		plan := database.Plan{
+		plan := database.PlanBlock{
 			Range: database.Range{
 				Start: start,
 				End:   end,
@@ -602,7 +605,9 @@ func readBroadcastType(start, end time.Time) *database.Plan {
 			Type: database.BroadcastTypes{
 				File: database.FileBroadcastType{
 					Location: locations,
-					Active:   true,
+					BroadcastType: database.BroadcastType{
+						Active: true,
+					},
 				},
 			},
 		}
@@ -619,10 +624,10 @@ func cmdHandleErr(err error) bool {
 	return false
 }
 
-func printPlan(plan database.Plan) {
+func printPlan(plan database.PlanBlock) {
 	fmt.Println(plan.Range.Start.Format("15:04:05") + " - " + plan.Range.End.Format("15:04:05"))
 	if plan.Type.Playlist.Active {
-		playlist := database.GetPlaylistInfoObject(plan.Type.Playlist.PlaylistId)
+		playlist := database.GetPlaylistData(plan.Type.Playlist.PlaylistId)
 		if playlist == nil {
 			fmt.Println("  Playlist ID: " + plan.Type.Playlist.PlaylistId + " (<NONEXISTENT>)")
 		} else {
@@ -641,7 +646,7 @@ func printPlan(plan database.Plan) {
 
 func printSong(song database.SongData) {
 	songid := strconv.Itoa(song.SongId)
-	votes := strconv.Itoa(song.VoteCount)
+	votes := strconv.Itoa(song.VoteCount())
 	fmt.Println("Song " + songid)
 	fmt.Println("  Title:    " + song.Title)
 	fmt.Println("  Authors:  " + song.Authors)
