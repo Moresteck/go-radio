@@ -25,7 +25,7 @@ jobs:
       run: env GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -v -buildmode exe -o dest/radio-linux-amd64 .
       
     - name: Build windows amd64
-      run: env GOOS=windows GOARCH=amd64 CGO_ENABLED=1 go build -v -buildmode exe -o dest/radio-windows-amd64 .
+      run: env GOOS=windows GOARCH=amd64 CGO_ENABLED=1 go build -v -buildmode exe -o dest/radio-windows-amd64.exe .
       
     - name: Upload linux amd64 artifact
       uses: actions/upload-artifact@v2.3.1
@@ -37,4 +37,4 @@ jobs:
       uses: actions/upload-artifact@v2.3.1
       with:
         name: windows-amd64
-        path: dest/radio-windows-amd64
+        path: dest/radio-windows-amd64.exe
