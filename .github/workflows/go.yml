@@ -24,9 +24,6 @@ jobs:
     - name: Build linux amd64
       run: env GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -v -buildmode exe -o dest/radio-linux-amd64 .
       
-    - name: Build linux 386
-      run: env GOOS=linux GOARCH=386 CGO_ENABLED=1 go build -v -buildmode exe -o dest/radio-linux-386 .
-      
     - name: Build windows amd64
       run: env GOOS=windows GOARCH=amd64 CGO_ENABLED=1 go build -v -buildmode exe -o dest/radio-windows-amd64 .
       
@@ -35,12 +32,6 @@ jobs:
       with:
         name: linux-amd64
         path: dest/radio-linux-amd64
-        
-    - name: Upload linux 386 artifact
-      uses: actions/upload-artifact@v2.3.1
-      with:
-        name: linux-386
-        path: dest/radio-linux-386
         
     - name: Upload windows amd64 artifact
       uses: actions/upload-artifact@v2.3.1
