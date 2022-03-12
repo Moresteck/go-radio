@@ -18,11 +18,9 @@ jobs:
       
     - name: Test for alsa.pc
       run: ls /usr/lib/x86_64-linux-gnu/pkgconfig/
-      
-    - run: export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig/
 
     - name: Generate build files
-      uses: rasky/go-cross-build@master
+      uses: Moresteck/go-cross-build@master
       with:
         platforms: "linux/amd64, linux/arm, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64, windows/arm64"
         name: "radio"
