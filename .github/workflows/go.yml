@@ -21,8 +21,8 @@ jobs:
       with:
         go-version: 1.17
         
-    - name: Build linux arm
-      run: env GOOS=linux GOARCH=arm CGO_ENABLED=1 go build -v -buildmode exe -o dest/radio-linux-arm .
+    - name: Build linux amd64
+      run: env GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -v -buildmode exe -o dest/radio-linux-amd64 .
       
     - name: Upload a Build Artifact
       uses: actions/upload-artifact@v2.3.1
