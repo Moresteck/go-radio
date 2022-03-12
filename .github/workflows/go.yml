@@ -15,6 +15,11 @@ jobs:
     
     - name: Install libasound2
       run: sudo apt install libasound2-dev
+      
+    - name: Test for alsa.pc
+      run: ls /usr/lib/x86_64-linux-gnu/pkgconfig/
+      
+    - run: export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig/
 
     - name: Generate build files
       uses: rasky/go-cross-build@master
