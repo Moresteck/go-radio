@@ -22,7 +22,7 @@ jobs:
         go-version: 1.17
         
     - name: Build linux arm
-      run: env GOOS=linux GOARCH=arm go build -v -buildmode exe -o dest/radio-linux-arm .
+      run: env GOOS=linux GOARCH=arm CGO_ENABLED=1 go build -v -buildmode exe -o dest/radio-linux-arm .
       
     - name: Upload a Build Artifact
       uses: actions/upload-artifact@v2.3.1
