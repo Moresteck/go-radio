@@ -16,17 +16,13 @@ jobs:
     - name: Install libasound2
       run: sudo apt install libasound2-dev
       
-    - name: Test for alsa.pc
-      run: ls /usr/lib/x86_64-linux-gnu/pkgconfig/
-
-    - name: Generate build files
-      uses: Moresteck/go-cross-build@master
+    - name: Set up Go
+      uses: actions/setup-go@v2
       with:
-        platforms: "linux/amd64, linux/arm, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64, windows/arm64"
-        name: "radio"
-        compress: "true"
-        dest: "dist"
-        ldflags: "main.Version=v1"
+        go-version: 1.17
+        
+    - name: Build linux arm
+      run: env GOOS=linux GOARCH=arm go build -v -buildmode exe -o dest/radio-linux-arm .
       
     - name: Upload a Build Artifact
       uses: actions/upload-artifact@v2.3.1
@@ -35,4 +31,4 @@ jobs:
         # name:
         # optional, default is artifact
         # A file, directory or wildcard pattern that describes what to upload
-        path: dest/*.tar.gz
+        path: dest/*
