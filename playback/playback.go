@@ -31,6 +31,9 @@ func InitSpeaker() {
 }
 
 func Init() {
+	if Inited {
+		speaker.Close()
+	}
 	InitSpeaker()
 	playlists, err := database.GetPlaylistsArray()
 	if err == nil {
@@ -259,6 +262,13 @@ func StartSchedule(schedule database.Schedule) {
 			discardCurSchedule[planid] = false
 			phaseout := false
 			wasrun := false
+
+			// don't run if it's past the plan's time
+			// otherwise conflicts will occur
+			if time.Now().After(plan1.Range.End) {
+				return
+			}
+
 			for {
 				select {
 				case <-ticker.C:
@@ -356,6 +366,7 @@ func StartSchedule(schedule database.Schedule) {
 							lastIndex = -1
 							fading.CurIndex = 0
 							fading.Release()
+							speaker.Clear()
 							ticker.Stop()
 							break
 						} else if plan1.Type.Playlist.Active {
@@ -373,6 +384,7 @@ func StartSchedule(schedule database.Schedule) {
 								lastIndex = -1
 								lastPlaylist = int(plid)
 								fading.Release()
+								speaker.Clear()
 								ticker.Stop()
 								break
 							}
@@ -394,6 +406,7 @@ func ScheduleChanged(at_date string) {
 			discardCurSchedule[index] = true
 		}
 		log.Println("WAIT")
+		Init()
 		time.Sleep(time.Second * 2)
 		PlayTodaySchedule()
 	}

@@ -329,7 +329,7 @@ func GetScheduleFor(date_at string) Schedule {
 func CreateSampleSchedule() {
 
 	start := time.Now()
-	end := start.Add(time.Minute * 30)
+	end := start.Add(time.Second * 30)
 
 	schedule := Schedule{}
 	plan1 := PlanBlock{}
@@ -337,7 +337,7 @@ func CreateSampleSchedule() {
 	plan1.Range.End = end
 
 	start = end.Add(time.Second * 10)
-	end = start.Add(time.Minute * 3)
+	end = start.Add(time.Second * 10)
 
 	plan2 := PlanBlock{}
 	plan2.Range.Start = start
