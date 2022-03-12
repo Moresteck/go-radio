@@ -17,7 +17,7 @@ jobs:
       run: sudo apt install libasound2-dev
 
     - name: Generate build files
-      uses: thatisuday/go-build-action@v1
+      uses: thatisuday/go-cross-build@v1.0.2
       with:
         platforms: "linux/amd64, linux/arm, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64, windows/arm64"
         name: "radio"
