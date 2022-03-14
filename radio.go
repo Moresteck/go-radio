@@ -85,10 +85,96 @@ func consoleInput() {
 
 		input = strings.TrimSuffix(input, "\r\n")
 
-		// TODO query (by matching title, authors)
-		// get queue (by playlist id)
 		args := strings.Split(input, " ")
-		if args[0] == "playlist" {
+		if args[0] == "query" {
+			if len(args) < 2 {
+				printHelp(args[0])
+				continue
+			}
+
+			if args[1] == "song" {
+				songs := database.GetSongArray()
+				matches := []database.SongData{}
+				for _, song := range songs {
+					var match bool
+					for i := 2; i < len(args); i++ {
+						querypart := args[i]
+						if strings.Contains(strings.ToLower(song.Authors), strings.ToLower(querypart)) ||
+							strings.Compare(strings.ToLower(strconv.Itoa(song.SongId)), strings.ToLower(querypart)) == 0 ||
+							strings.Contains(strings.ToLower(song.Title), strings.ToLower(querypart)) ||
+							strings.Compare(strings.ToLower(song.ReleaseDate.Format("2006-01-02")), strings.ToLower(querypart)) == 0 ||
+							strings.Compare(strings.ToLower(song.ReleaseDate.Format("2006-01")), strings.ToLower(querypart)) == 0 ||
+							strings.Compare(strings.ToLower(song.ReleaseDate.Format("2006")), strings.ToLower(querypart)) == 0 {
+							match = true
+						} else {
+							match = false
+						}
+					}
+					if match {
+						matches = append(matches, song)
+					}
+
+				}
+
+				for _, song := range matches {
+					printSong(song)
+				}
+			} else if args[1] == "playlist" {
+				playlists, err := database.GetPlaylistsArray()
+				if cmdHandleErr(err) {
+					break
+				}
+				matches := []database.Playlist{}
+				for _, playlist := range playlists {
+					var match bool
+					for i := 2; i < len(args); i++ {
+						querypart := args[i]
+						if strings.Contains(strings.ToLower(playlist.Name), strings.ToLower(querypart)) ||
+							strings.Compare(strings.ToLower(strconv.Itoa(playlist.Id)), strings.ToLower(querypart)) == 0 ||
+							strings.Contains(strings.ToLower(playlist.Desc), strings.ToLower(querypart)) {
+							match = true
+						} else {
+							match = false
+						}
+					}
+					if match {
+						matches = append(matches, playlist)
+					}
+
+				}
+
+				for _, playlist := range matches {
+					printPlaylist(playlist)
+				}
+			}
+		} else if args[0] == "queue" {
+			if len(args) < 2 {
+				printHelp(args[0])
+				continue
+			}
+
+			if args[1] == "get" {
+				if len(args) < 3 {
+					printHelp(args[0])
+					continue
+				}
+
+				playlistid := args[2]
+
+				plid, err := strconv.ParseInt(playlistid, 10, 64)
+				if cmdHandleErr(err) {
+					break
+				}
+				pid := int(plid)
+
+				songs := playback.GeneratedQueues[pid]
+				fmt.Println("Queue size: " + strconv.Itoa(len(songs)))
+				for index, song := range songs {
+					fmt.Println("Pos " + strconv.Itoa(index))
+					printSong(*database.GetSongData(strconv.Itoa(song)))
+				}
+			}
+		} else if args[0] == "playlist" {
 			if len(args) < 2 {
 				printHelp(args[0])
 				continue
@@ -488,6 +574,7 @@ func consoleInput() {
 			}
 		} else {
 			fmt.Println("Unknown command")
+			printHelp(args[0])
 		}
 	}
 }
@@ -671,22 +758,37 @@ func printPlaylist(playlist database.Playlist) {
 }
 
 func printHelp(cmd string) {
-	fmt.Println("Not enough args")
 	if cmd == "schedule" {
+		fmt.Println("Not enough args")
 		fmt.Println("schedule today")
 		fmt.Println("schedule set <YYYY-MM-dd>")
 		fmt.Println("schedule change <YYYY-MM-dd>")
 	} else if cmd == "song" {
+		fmt.Println("Not enough args")
 		fmt.Println("song list [page]")
 		fmt.Println("song add")
 		fmt.Println("song delete <id>")
 	} else if cmd == "playlist" {
+		fmt.Println("Not enough args")
 		fmt.Println("playlist list")
 		fmt.Println("playlist create")
 		fmt.Println("playlist get <id> [page]")
 		fmt.Println("playlist delete <id>")
 		fmt.Println("playlist addsong <playlistid> <songid>")
 		fmt.Println("playlist remsong <playlistid> <songid>")
+	} else if cmd == "queue" {
+		fmt.Println("Not enough args")
+		fmt.Println("queue get <playlistid>")
+	} else if cmd == "query" {
+		fmt.Println("Not enough args")
+		fmt.Println("query song [query ...]")
+		fmt.Println("query playlist [query ...]")
+	} else {
+		fmt.Println("schedule")
+		fmt.Println("song")
+		fmt.Println("playlist")
+		fmt.Println("queue")
+		fmt.Println("query")
 	}
 	fmt.Println()
 }

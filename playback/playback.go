@@ -24,7 +24,7 @@ var lastPlaylist int
 var lastIndex = -1
 
 // [playlistId][queueIndex] = songid
-var generatedQueues = map[int][]int{}
+var GeneratedQueues = map[int][]int{}
 
 func InitSpeaker() {
 	speaker.Init(44100, int(time.Duration(65536)))
@@ -38,7 +38,7 @@ func Init() {
 	playlists, err := database.GetPlaylistsArray()
 	if err == nil {
 		for _, playlist := range playlists {
-			generatedQueues[playlist.Id] = database.CreateQueue(strconv.Itoa(playlist.Id))
+			GeneratedQueues[playlist.Id] = database.CreateQueue(strconv.Itoa(playlist.Id))
 		}
 		Inited = true
 	}
@@ -53,15 +53,19 @@ var curCtrl *beep.Ctrl
 var curVolume *effects.Volume
 
 func PlayPlaylist(id int) {
-	songids := generatedQueues[id]
+	songids := GeneratedQueues[id]
 
 	// reset the contents in case if another playlist was played before
 	streamers = []beep.StreamSeeker{}
 	queue = []*database.SongData{}
 
 	var format beep.Format
+	startpoint := 0
+	if fading.CurFader != nil {
+		startpoint = fading.CurFader.Id
+	}
 
-	for i := fading.CurIndex; i < len(songids); i++ {
+	for i := startpoint; i < len(songids); i++ {
 		el := songids[i]
 
 		idstr := strconv.Itoa(el)
@@ -183,7 +187,12 @@ func PlayFiles(files []string) {
 
 	var format beep.Format
 
-	for i := fading.CurIndex; i < len(files); i++ {
+	startpoint := 0
+	if fading.CurFader != nil {
+		startpoint = fading.CurFader.Id
+	}
+
+	for i := startpoint; i < len(files); i++ {
 		el := files[i]
 
 		song, form := GetFileStreamer(el)
@@ -290,14 +299,14 @@ func StartSchedule(schedule database.Schedule) {
 						if plan1.Type.File.Active {
 							if !wasrun {
 								lastPlaylist = -1
-								fading.CurIndex = 0
+								fading.CurFader = nil
 								PlayFiles(plan1.Type.File.Location)
 								wasrun = true
 							}
 
-							if lastIndex != fading.CurIndex {
-								lastIndex = fading.CurIndex
-								song := fileQueue[fading.CurIndex]
+							if fading.CurFader != nil && lastIndex != fading.CurFader.Id {
+								lastIndex = fading.CurFader.Id
+								song := fileQueue[lastIndex]
 								log.Println("Now playing: " + song)
 							}
 						} else if plan1.Type.Playlist.Active {
@@ -309,7 +318,7 @@ func StartSchedule(schedule database.Schedule) {
 
 								// resume playback in the new planblock
 								if lastPlaylist != pid {
-									fading.CurIndex = 0
+									fading.CurFader = nil
 								}
 
 								curPlayList = pid
@@ -320,51 +329,37 @@ func StartSchedule(schedule database.Schedule) {
 
 								phaseout = true
 
-								if fading.CurIndex > -1 {
+								if fading.CurFader != nil {
 
-									go func(plan2 database.PlanBlock, planid1 int) {
-										//lowvolumeticker := time.NewTicker(time.Second / 10)
-
-										for {
-											if discardCurSchedule[planid1] {
-												break
-											}
-											now1 := time.Now()
-
-											if now1.After(plan2.Range.End) {
-												//lowvolumeticker.Stop()
-												break
-											} else if curVolume != nil {
-												//volume := volumes[curIndex]
-
-												speaker.Lock()
-												curVolume.Volume -= 0.01
-												curVolume.Base *= 2
-												speaker.Unlock()
-												time.Sleep(time.Millisecond * 66)
-											}
-										}
-									}(plan1, planid)
-
+									// Start fading out
+									// This manner pretends that the stream needs to start being faded
+									fading.CurFader.AudioLength = float64(0)
 								}
 							}
 
-							if curPlayList == pid && lastIndex != fading.CurIndex && len(queue) > fading.CurIndex {
-								lastIndex = fading.CurIndex
-								song := queue[fading.CurIndex]
+							if curPlayList == pid && fading.CurFader != nil && lastIndex != fading.CurFader.Id && len(queue) > fading.CurFader.Id {
+								lastIndex = fading.CurFader.Id
+								song := queue[lastIndex]
 								log.Println(song.Authors + " - " + song.Title + " (" + song.ReleaseDate.Format("2006-01-02") + ")")
 							}
 						}
 					} else if now.After(plan1.Range.End) {
 
 						if plan1.Type.File.Active {
+
+							// Mute before pausing, otherwise it will stutter for half a second
+							if curVolume != nil {
+								curVolume.Volume = -1
+								curVolume.Base *= 10
+							}
+
 							// Pause playback before playing the next planblock
 							if curCtrl != nil {
 								curCtrl.Paused = true
 							}
 
 							lastIndex = -1
-							fading.CurIndex = 0
+							fading.CurFader = nil
 							fading.Release()
 							speaker.Clear()
 							ticker.Stop()
@@ -374,6 +369,12 @@ func StartSchedule(schedule database.Schedule) {
 
 							if curPlayList == int(plid) {
 								log.Println("End playback of playlist " + plan1.Type.Playlist.PlaylistId)
+
+								// Mute before pausing, otherwise it will stutter for half a second
+								if curVolume != nil {
+									curVolume.Volume = -1
+									curVolume.Base *= 10
+								}
 
 								// Pause playback before playing the next planblock
 								if curCtrl != nil {

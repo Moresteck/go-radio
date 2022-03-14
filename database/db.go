@@ -66,9 +66,23 @@ type Playlist struct {
 	Name string `json:"title"`
 	Desc string `json:"description"`
 	// the higher the rank, the earlier the playlist will show on playlist index
-	// TODO implement
 	Rank      int       `json:"rank"`
 	DebutDate time.Time `json:"debut_date"`
+}
+
+// PlaylistArray to sort by rank
+type PlaylistArray []Playlist
+
+func (e PlaylistArray) Len() int {
+	return len(e)
+}
+
+func (e PlaylistArray) Less(i, j int) bool {
+	return e[i].Rank > e[j].Rank
+}
+
+func (e PlaylistArray) Swap(i, j int) {
+	e[i], e[j] = e[j], e[i]
 }
 
 // song object as seen in db
@@ -138,6 +152,8 @@ func GetPlaylistsArray() ([]Playlist, error) {
 		}
 		playlists = append(playlists, playlist)
 	}
+
+	sort.Sort(PlaylistArray(playlists))
 
 	return playlists, nil
 }
@@ -337,7 +353,7 @@ func CreateSampleSchedule() {
 	plan1.Range.End = end
 
 	start = end.Add(time.Second * 10)
-	end = start.Add(time.Second * 10)
+	end = start.Add(time.Minute * 3)
 
 	plan2 := PlanBlock{}
 	plan2.Range.Start = start
