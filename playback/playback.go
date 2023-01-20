@@ -21,13 +21,13 @@ import (
 var Inited = false
 var curPlayList int
 var lastPlaylist int
-var lastIndex = -1
+var LastIndex = -1
 
 // [playlistId][queueIndex] = songid
 var GeneratedQueues = map[int][]int{}
 
 func InitSpeaker() {
-	speaker.Init(44100, int(time.Duration(65536)))
+	speaker.Init(48000, int(time.Duration(65536)))
 }
 
 func Init() {
@@ -44,20 +44,20 @@ func Init() {
 	}
 }
 
-var streamers []beep.StreamSeeker
-var queue []*database.SongData
-var fileQueue []string
+var Streamers []beep.StreamSeeker
+var Queue []*database.SongData
+var FileQueue []string
 
-var curStreamer beep.Streamer
-var curCtrl *beep.Ctrl
-var curVolume *effects.Volume
+var CurStreamer *fading.OwnStreamer
+var CurCtrl *beep.Ctrl
+var CurVolume *effects.Volume
 
 func PlayPlaylist(id int) {
 	songids := GeneratedQueues[id]
 
 	// reset the contents in case if another playlist was played before
-	streamers = []beep.StreamSeeker{}
-	queue = []*database.SongData{}
+	Streamers = []beep.StreamSeeker{}
+	Queue = []*database.SongData{}
 
 	var format beep.Format
 	startpoint := 0
@@ -79,24 +79,23 @@ func PlayPlaylist(id int) {
 			format = form
 		}
 
-		streamers = append(streamers, song)
-		queue = append(queue, dbsong)
+		Streamers = append(Streamers, song)
+		Queue = append(Queue, dbsong)
 	}
 	opts := fading.Options{
 		TimeSpan: time.Duration(5) * time.Second,
 		Volume:   1,
 	}
-	curStreamer = fading.CrossfadeStream(format, &opts, streamers...)
-	curCtrl = &beep.Ctrl{Streamer: curStreamer, Paused: false}
-	curVolume = &effects.Volume{
-		Streamer: curCtrl,
+	CurStreamer = fading.CrossfadeStream(format, &opts, Streamers...)
+	CurCtrl = &beep.Ctrl{Streamer: CurStreamer, Paused: false}
+	CurVolume = &effects.Volume{
+		Streamer: CurCtrl,
 		Base:     2,
 		Volume:   0,
 		Silent:   false,
 	}
 
-	// speaker.Play(final)
-	speaker.Play(curVolume)
+	speaker.Play(CurVolume)
 }
 
 func PlaySong(songid string) {
@@ -182,8 +181,8 @@ func GetSongFormat(songid string) (beep.StreamSeekCloser, beep.Format) {
 func PlayFiles(files []string) {
 
 	// reset the contents in case if another playlist was played before
-	streamers = []beep.StreamSeeker{}
-	fileQueue = []string{}
+	Streamers = []beep.StreamSeeker{}
+	FileQueue = []string{}
 
 	var format beep.Format
 
@@ -204,24 +203,23 @@ func PlayFiles(files []string) {
 			format = *form
 		}
 
-		streamers = append(streamers, song)
-		fileQueue = append(fileQueue, el)
+		Streamers = append(Streamers, song)
+		FileQueue = append(FileQueue, el)
 	}
 	opts := fading.Options{
 		TimeSpan: time.Duration(5) * time.Second,
 		Volume:   1,
 	}
-	curStreamer = fading.CrossfadeStream(format, &opts, streamers...)
-	curCtrl = &beep.Ctrl{Streamer: curStreamer, Paused: false}
-	curVolume = &effects.Volume{
-		Streamer: curCtrl,
+	CurStreamer = fading.CrossfadeStream(format, &opts, Streamers...)
+	CurCtrl = &beep.Ctrl{Streamer: CurStreamer, Paused: false}
+	CurVolume = &effects.Volume{
+		Streamer: CurCtrl,
 		Base:     2,
 		Volume:   0,
 		Silent:   false,
 	}
 
-	// speaker.Play(final)
-	speaker.Play(curVolume)
+	speaker.Play(CurVolume)
 }
 
 func GetFileStreamer(loc string) (beep.StreamSeeker, *beep.Format) {
@@ -283,17 +281,18 @@ func StartSchedule(schedule database.Schedule) {
 				case <-ticker.C:
 					//log.Println("tick playlist " + plan1.Type.Playlist.PlaylistId)
 					if discardCurSchedule[planid] {
-						if curCtrl != nil {
-							curCtrl.Paused = true
+						if CurCtrl != nil {
+							CurCtrl.Paused = true
 						}
 
 						curPlayList = -1
 						lastPlaylist = -1
-						lastIndex = -1
+						LastIndex = -1
 						fading.Release()
 						ticker.Stop()
 						break
 					}
+
 					now := time.Now()
 					if !now.Before(plan1.Range.Start) && !now.After(plan1.Range.End) {
 						if plan1.Type.File.Active {
@@ -304,9 +303,9 @@ func StartSchedule(schedule database.Schedule) {
 								wasrun = true
 							}
 
-							if fading.CurFader != nil && lastIndex != fading.CurFader.Id {
-								lastIndex = fading.CurFader.Id
-								song := fileQueue[lastIndex]
+							if fading.CurFader != nil && LastIndex != fading.CurFader.Id {
+								LastIndex = fading.CurFader.Id
+								song := FileQueue[LastIndex]
 								log.Println("Now playing: " + song)
 							}
 						} else if plan1.Type.Playlist.Active {
@@ -325,7 +324,7 @@ func StartSchedule(schedule database.Schedule) {
 								PlayPlaylist(pid)
 
 							} else if !phaseout && curPlayList == pid &&
-								now.After(plan1.Range.End.Add(-time.Second*10)) {
+								now.After(plan1.Range.End.Add(-time.Second*5)) {
 
 								phaseout = true
 
@@ -337,9 +336,9 @@ func StartSchedule(schedule database.Schedule) {
 								}
 							}
 
-							if curPlayList == pid && fading.CurFader != nil && lastIndex != fading.CurFader.Id && len(queue) > fading.CurFader.Id {
-								lastIndex = fading.CurFader.Id
-								song := queue[lastIndex]
+							if curPlayList == pid && fading.CurFader != nil && LastIndex != fading.CurFader.Id && len(Queue) > fading.CurFader.Id {
+								LastIndex = fading.CurFader.Id
+								song := Queue[LastIndex]
 								log.Println(song.Authors + " - " + song.Title + " (" + song.ReleaseDate.Format("2006-01-02") + ")")
 							}
 						}
@@ -348,17 +347,17 @@ func StartSchedule(schedule database.Schedule) {
 						if plan1.Type.File.Active {
 
 							// Mute before pausing, otherwise it will stutter for half a second
-							if curVolume != nil {
-								curVolume.Volume = -1
-								curVolume.Base *= 10
+							if CurVolume != nil {
+								CurVolume.Volume = -1
+								CurVolume.Base *= 10
 							}
 
 							// Pause playback before playing the next planblock
-							if curCtrl != nil {
-								curCtrl.Paused = true
+							if CurCtrl != nil {
+								CurCtrl.Paused = true
 							}
 
-							lastIndex = -1
+							LastIndex = -1
 							fading.CurFader = nil
 							fading.Release()
 							speaker.Clear()
@@ -371,18 +370,18 @@ func StartSchedule(schedule database.Schedule) {
 								log.Println("End playback of playlist " + plan1.Type.Playlist.PlaylistId)
 
 								// Mute before pausing, otherwise it will stutter for half a second
-								if curVolume != nil {
-									curVolume.Volume = -1
-									curVolume.Base *= 10
+								if CurVolume != nil {
+									CurVolume.Volume = -1
+									CurVolume.Base *= 10
 								}
 
 								// Pause playback before playing the next planblock
-								if curCtrl != nil {
-									curCtrl.Paused = true
+								if CurCtrl != nil {
+									CurCtrl.Paused = true
 								}
 
 								curPlayList = -1
-								lastIndex = -1
+								LastIndex = -1
 								lastPlaylist = int(plid)
 								fading.Release()
 								speaker.Clear()

@@ -27,6 +27,8 @@ SOFTWARE.
 package fading
 
 import (
+	"fmt"
+	"log"
 	"math"
 	"time"
 
@@ -54,6 +56,8 @@ type Fader struct {
 	AudioLength float64
 	// ID so that it can persist itterators between bits of slices
 	Id int
+	// edit by radio
+	Stop bool
 }
 
 func init() {
@@ -73,14 +77,50 @@ type Options struct {
 }
 
 type OwnStreamer struct {
-	Streamer beep.Streamer
-	Length   int
+	Faders []*Fader
+	Pos    int
+	Mixer  beep.Mixer
+}
+
+func (bs *OwnStreamer) Err() error {
+	return nil
+}
+
+func (bs *OwnStreamer) Len() int {
+	return len(bs.Faders)
+}
+
+func (bs *OwnStreamer) Position() int {
+	return bs.Pos
+}
+
+func (bs *OwnStreamer) Seek(p int) error {
+	if p < 0 || bs.Len() < p {
+		return fmt.Errorf("buffer: seek position %v out of range [%v, %v]", p, 0, bs.Len())
+	}
+	bs.Pos = p
+	return nil
+}
+
+func (bs *OwnStreamer) Stream(samples [][2]float64) (n int, ok bool) {
+	fader := bs.Faders[bs.Pos]
+	ittrz := itters[bs.Pos]
+
+	if len(ittrz) == 0 {
+		log.Println("new stream")
+		bs.Mixer.Add(beep.StreamerFunc(bs.Faders[bs.Pos].Stream))
+	} else if len(ittrz) > 0 && ittrz[1] >= fader.AudioLength-fader.TimeSpan {
+		bs.Mixer.Clear() // TODO make the Fader.Stream() phase out when skipping
+		bs.Pos++
+	}
+
+	return bs.Mixer.Stream(samples)
 }
 
 // CrossfadeStream crossfades between all songs specified in files
 // The sample-rates between the two streams must be the same, otherwise weird things might happen
 // If opts is nil, then reasonable defaults are used
-func CrossfadeStream(format beep.Format, opts *Options, streams ...beep.StreamSeeker) beep.Streamer {
+func CrossfadeStream(format beep.Format, opts *Options, streams ...beep.StreamSeeker) *OwnStreamer {
 	timeSpan := time.Second * 9
 	volume := 1.0
 	if opts != nil {
@@ -89,31 +129,43 @@ func CrossfadeStream(format beep.Format, opts *Options, streams ...beep.StreamSe
 	}
 
 	// Streamer that will contain all files
-	var streamer beep.Streamer
+	var streamer = &OwnStreamer{Faders: []*Fader{}, Mixer: beep.Mixer{}, Pos: 0}
 	// Create 1000 samples of silence so that beep.Mix has a non-nil streamer to work with
-	streamer = beep.Silence(1000)
+	//var silence = beep.Silence(100)
 	// The time span of the file previous to the one calculating on it. Used to get timing for crossfading right
-	var lastTimeSpan float64
+	//var lastTimeSpan float64
 	// Specifies how long the streamer is, so that timing for crossfading is correct
 	var position float64
 	// Iterate through all files specified to add them to streamer with proper crossfade
 	for id, stream := range streams {
 		// Create the set of parameters for it's stream function
-		var faderStream = &Fader{Streamer: stream, Volume: volume, TimeSpan: float64(format.SampleRate.N(timeSpan)), AudioLength: float64(stream.Len()), Id: id}
+		var faderStream = &Fader{Streamer: stream, Volume: volume, TimeSpan: float64(format.SampleRate.N(timeSpan)), AudioLength: float64(stream.Len()), Id: id, Stop: false}
 		// Create streamer with fading applied
-		changedStreamer := beep.StreamerFunc(faderStream.Stream)
+		//changedStreamer := beep.StreamerFunc(faderStream.Stream)
 		// Create amount of silence before playing sound. Uses position, which by itself would make it play after the previous song. Subtracting lastTimeSpan makes a crossfade effect
-		silenceAmount := int(position - lastTimeSpan)
+		//silenceAmount := int(position - lastTimeSpan)
+
+		// if id-1 < 0 && id != 0 {
+		// 	silence = streamer.Streamers[id-1]
+		// }
 		// Keeps previous streamer, and adds the new streamer with the silence in the beginning so it doesn't play over other songs
-		streamer = beep.Mix(streamer, beep.Seq(beep.Silence(silenceAmount), changedStreamer))
+		streamer.Faders = append(streamer.Faders, faderStream)
+		//streamer.Streamers[id] = )
+		//silence = beep.Silence(100)
+
+		//streamer = beep.Mix(streamer, beep.Seq(beep.Silence(silenceAmount), changedStreamer))
 		// Add position for next file
 		position = position + faderStream.AudioLength
 		// Set last time span to current time span for next file
-		lastTimeSpan = faderStream.TimeSpan
+		//lastTimeSpan = faderStream.TimeSpan
+		// edit by radio
+		//faderStream.Positions[id] = position
 	}
 
 	return streamer
 }
+
+var debug int64
 
 // Stream edits streamer so that it fades
 func (v *Fader) Stream(samples [][2]float64) (n int, ok bool) {
@@ -133,6 +185,7 @@ func (v *Fader) Stream(samples [][2]float64) (n int, ok bool) {
 	*/
 	var fadeItter = &itters[v.Id][0]
 	var trackItter = &itters[v.Id][1]
+
 	// Use default streamer, and revise off of that
 	n, ok = v.Streamer.Stream(samples)
 	// Set gain to 0 if math.Pow fails
@@ -188,8 +241,14 @@ func (v *Fader) Stream(samples [][2]float64) (n int, ok bool) {
 		// Increment trackItter to update position in track
 		*trackItter++
 	}
+
+	if debug%int64(100) == 0 {
+		log.Println("doing")
+	}
+	debug++
+
 	// Return the samples with gain applied, and whether or not operations were successful
-	return n, ok
+	return n, ok // edit by radio
 }
 
 // Calculates the slope between two points

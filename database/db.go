@@ -345,7 +345,7 @@ func GetScheduleFor(date_at string) Schedule {
 func CreateSampleSchedule() {
 
 	start := time.Now()
-	end := start.Add(time.Second * 30)
+	end := start.Add(time.Minute * 3)
 
 	schedule := Schedule{}
 	plan1 := PlanBlock{}
@@ -359,7 +359,7 @@ func CreateSampleSchedule() {
 	plan2.Range.Start = start
 	plan2.Range.End = end
 
-	pbti := PlaylistBroadcastType{BroadcastType: BroadcastType{Active: true}, PlaylistId: "1"}
+	pbti := PlaylistBroadcastType{BroadcastType: BroadcastType{Active: true}, PlaylistId: "3"}
 	plan1.Type.Playlist = pbti
 	pbti1 := PlaylistBroadcastType{BroadcastType: BroadcastType{Active: true}, PlaylistId: "2"}
 	plan2.Type.Playlist = pbti1

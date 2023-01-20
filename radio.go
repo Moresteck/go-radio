@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"radio/database"
+	"radio/fading"
 	"radio/playback"
 	"radio/session"
 	"radio/utils"
@@ -86,7 +87,16 @@ func consoleInput() {
 		input = strings.TrimSuffix(input, "\r\n")
 
 		args := strings.Split(input, " ")
-		if args[0] == "query" {
+		if args[0] == "skip" {
+			if fading.CurFader != nil {
+				playback.CurStreamer.Seek(fading.CurFader.Id + 1)
+				//playback.CurStreamer
+				playback.LastIndex = fading.CurFader.Id
+				song := playback.Queue[playback.LastIndex]
+				log.Println(song.Authors + " - " + song.Title + " (" + song.ReleaseDate.Format("2006-01-02") + ")")
+				log.Println("Kopytko")
+			}
+		} else if args[0] == "query" {
 			if len(args) < 2 {
 				printHelp(args[0])
 				continue
